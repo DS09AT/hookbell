@@ -171,6 +171,10 @@ hook)
   exec "$(binary "$2")" --hook "${3:-}" "${@:4}"
   ;;
 install)
+  if ! xcode-select -p >/dev/null 2>&1; then
+    xcode-select --install 2>/dev/null || true
+    die "the Xcode Command Line Tools are missing; finish the installer that just opened, then run this command again"
+  fi
   mkdir -p "$ROOT/Sources" "$(dirname "$CLI")"
   swiftc -O -o "$ROOT/hookbell.new" "$REPO/main.swift"
   mv "$ROOT/hookbell.new" "$ROOT/hookbell"
@@ -181,6 +185,10 @@ install)
   done
   ln -sf "$REPO/hookbell" "$CLI"
   echo "installed hookbell $VERSION ($CLI)"
+  case ":$PATH:" in
+  *":$(dirname "$CLI"):"*) ;;
+  *) echo "tip: add ~/.local/bin to your PATH to type just 'hookbell'" ;;
+  esac
   ;;
 add)
   check_id "${2:-}"
@@ -224,8 +232,15 @@ add)
   mv "$tmp/x.app" "$app"
   sign "$app"
   echo "added $2 ($app)"
-  # The permission prompt needs someone to answer it; non-interactive runs (CI) skip it.
-  if [ -t 0 ]; then "$0" authorize "$2"; else echo "run 'hookbell authorize $2' to allow notifications"; fi
+  # macOS shows the permission prompt only while the asking process waits, so launch it detached:
+  # this command returns at once and a confirmation follows when you click Allow. CI has nobody to ask.
+  if [ -n "${CI:-}" ]; then
+    echo "skipped the permission prompt for $2 (CI)"
+  else
+    focus="$("$(binary "$2")" --title setup --dry-run | awk -F ' [|] ' '{print $NF}')"
+    open -n -g "$app" --args --authorize --id "hookbell-setup-$2" --focus "$focus" \
+      --title "$name notifications are on" --body "Click to jump back to where you set up hookbell."
+  fi
   ;;
 authorize)
   check_id "${2:-}"
@@ -237,12 +252,21 @@ hooks)
   [ -n "${2:-}" ] || die "usage: hookbell hooks <codex|claude-code|gemini|agy|all>"
   selected="$(select_tools hooks "${@:2}")"
   [ -n "$selected" ] || die "none of ${TOOLS[*]} is installed"
+  added=() failed=()
   for tool in $selected; do
     tool_info "$tool" >/dev/null
     IFS='|' read -r name app_id <<<"$(tool_info "$tool")"
-    [ -d "$(bundle "$tool")" ] || "$0" add "$tool" "$name" "$(app_icon "$app_id")"
-    patch_config install "$tool"
+    if [ ! -d "$(bundle "$tool")" ]; then
+      "$0" add "$tool" "$name" "$(app_icon "$app_id")"
+      added+=("$name")
+    fi
+    patch_config install "$tool" || failed+=("$tool")
   done
+  echo
+  echo "hookbell is set up for: $(echo "$selected" | tr '\n' ' ')"
+  [ ${#added[@]} -eq 0 ] || echo "-> Click Allow in the macOS prompt for: $(printf '%s, ' "${added[@]}" | sed 's/, $//')"
+  echo "-> Restart running agent sessions so they load the new hooks."
+  [ ${#failed[@]} -eq 0 ] || die "not hooked: ${failed[*]} (see the message above)"
   ;;
 unhook)
   [ -n "${2:-}" ] || die "usage: hookbell unhook <codex|claude-code|gemini|agy|all>"

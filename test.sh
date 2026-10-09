@@ -5,6 +5,7 @@
 #                             all inside a temporary HOME; sends no notifications (CI-safe)
 #   ./test.sh --live SOURCE   additionally posts silent notifications through an authorized SOURCE
 set -uo pipefail
+export CI="${CI:-1}"  # never open permission prompts from the self-check
 cd "$(dirname "$0")" || exit 1
 fail=0
 T="$(mktemp -d)"
@@ -112,8 +113,10 @@ check "gemini restored" "$(json 'd' "$T/.gemini/settings.json")" "$(json 'd' "$T
 check "codex restored" "$(cat "$T/.codex/config.toml")" "$(cat "$T/codex.orig")"
 check "agy removed" "$(json '"hookbell" in d' "$T/.gemini/config/hooks.json")" "False"
 printf 'notify = ["other"]\n' >"$T/.codex/config.toml"
-expect 1 hb hooks codex
+expect 1 hb hooks all
 check "foreign codex notify kept" "$(cat "$T/.codex/config.toml")" 'notify = ["other"]'
+check "codex conflict does not block other tools" "$(json '"hookbell" in d' "$T/.gemini/config/hooks.json")" "True"
+hb unhook all >/dev/null
 hb uninstall >/dev/null
 check "uninstall removes data and link" "$(ls "$T/Library/Application Support/hookbell" "$T/.local/bin/hookbell" 2>/dev/null)" ""
 

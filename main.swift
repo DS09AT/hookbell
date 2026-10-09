@@ -3,7 +3,8 @@
 //                   [--image PATH] [--id KEY] [--focus auto|none|TARGETS] [--dry-run]
 //   hook:  hookbell --hook PAYLOAD [--dry-run]   (empty PAYLOAD: read the JSON from stdin)
 //          Codex notify, Claude Code, Gemini CLI and Antigravity (agy) hook payloads.
-//   other: --authorize (asks for permission, waits for the answer) | --jump TARGETS
+//   other: --authorize [--title T ...] (asks for permission and waits; then sends T if given)
+//          --jump TARGETS
 //   none:  launched by macOS after a click on one of our notifications.
 // TARGETS: ";"-separated, tried in order until one focuses a window:
 //   iterm:<session-uuid> | tty:<device> | tmux:<pane>:<socket>:<tmux-binary> | url:<url> | app:<bundle-id>[:<folder>]
@@ -324,12 +325,6 @@ if let targets = opts["--jump"] {
     jump(all: targets.split(separator: ";").map(String.init))
     exit(0)
 }
-if opts["--authorize"] != nil {
-    // The permission prompt vanishes when the process exits, so wait for the answer.
-    center.requestAuthorization(options: [.alert, .sound]) { granted, _ in finish(granted ? 0 : 2) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 300) { finish(2, "no answer to the permission prompt") }
-    dispatchMain()
-}
 if let payload = opts["--hook"] {
     hookMode = true
     let raw = payload.isEmpty && isatty(0) == 0 ? String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self) : payload
@@ -339,7 +334,9 @@ if let payload = opts["--hook"] {
     }
     opts.merge(hook) { _, new in new }
 }
-guard let title = opts["--title"], !title.isEmpty else { finish(1, "--title is required") }
+let authorizing = opts["--authorize"] != nil
+let title = opts["--title"] ?? ""
+if title.isEmpty && !authorizing { finish(1, "--title is required") }
 let focus: [String] = switch opts["--focus"] ?? "auto" {
 case "auto": autoFocus(dir: opts["dir"].flatMap { $0.isEmpty ? nil : $0 } ?? FileManager.default.currentDirectoryPath)
 case "none": []
@@ -349,12 +346,28 @@ if opts["--dry-run"] != nil {
     print((["--title", "--body", "--sound", "--id"].map { opts[$0] ?? "" } + [focus.joined(separator: ";")]).joined(separator: " | "))
     exit(0)
 }
-let request = UNNotificationRequest(identifier: opts["--id"] ?? UUID().uuidString, content: content(opts, focus: focus), trigger: nil)
-center.getNotificationSettings { settings in
-    guard [.authorized, .provisional].contains(settings.authorizationStatus) else {
-        finish(2, "notifications not allowed for \(Bundle.main.bundleIdentifier ?? "?"); run: hookbell authorize <source>")
+
+func send() {
+    let request = UNNotificationRequest(identifier: opts["--id"] ?? UUID().uuidString, content: content(opts, focus: focus), trigger: nil)
+    center.getNotificationSettings { settings in
+        guard [.authorized, .provisional].contains(settings.authorizationStatus) else {
+            finish(2, "notifications not allowed for \(Bundle.main.bundleIdentifier ?? "?"); run: hookbell authorize <source>")
+        }
+        center.add(request) { error in finish(error == nil ? 0 : 3, error?.localizedDescription) }
     }
-    center.add(request) { error in finish(error == nil ? 0 : 3, error?.localizedDescription) }
 }
-DispatchQueue.main.asyncAfter(deadline: .now() + 10) { finish(3, "timeout") }
+
+if authorizing {
+    // The permission prompt vanishes when the process exits, so wait for the answer; with a title,
+    // a confirmation notification follows once access is granted.
+    center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        guard granted else { finish(2) }
+        if title.isEmpty { finish(0) }
+        send()
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 300) { finish(2, "no answer to the permission prompt") }
+} else {
+    send()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { finish(3, "timeout") }
+}
 dispatchMain()
