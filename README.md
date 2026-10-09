@@ -1,139 +1,124 @@
 # hookbell
 
-Native macOS notifications for AI coding agents and any other command-line tool. Every sender
-gets its own name and logo in Notification Center, and a click takes you back to the exact
-terminal tab, tmux pane or editor window the notification came from.
+Native macOS notifications for command-line tools and AI coding agents. Each sender appears in
+Notification Center with its own name and icon. Click a notification to return to the terminal tab
+or editor window that sent it.
 
-- **One app per source.** Codex, Claude Code, Gemini CLI, Antigravity or your own scripts show
-  up with their own icon on the left, like real apps, not as "Script Editor".
-- **Click to jump back.** iTerm2 session, Terminal.app tab, tmux pane or the editor window of
-  the project folder.
-- **Agent hooks built in.** `hookbell hook <tool>` reads the agent's hook payload directly: no
-  wrapper scripts. Subagent turns and background work stay silent, one notification per session
-  replaces the previous one instead of stacking up.
-- **Small and local.** One Swift file plus one shell script, no daemon, no network, no
-  dependencies besides the Xcode Command Line Tools. A notification takes about 20–30 ms.
+hookbell is one Swift file and one shell script. It works offline and builds with the Xcode
+Command Line Tools. It starts when a tool calls it or you click a notification and exits once it
+is done.
 
 ## Install
-
-Run this in a terminal, or paste it into your AI agent (Claude Code, Codex, Gemini CLI,
-Antigravity) and ask it to run it:
 
 ```bash
 git clone https://github.com/DS09AT/hookbell.git ~/.hookbell && ~/.hookbell/hookbell install && ~/.hookbell/hookbell hooks all
 ```
 
-Then click **Allow** in the macOS prompt for each tool and restart running agent sessions. The
-command prints exactly that when it is done.
+`install` builds hookbell and links it to `~/.local/bin/hookbell`. If the Xcode Command Line Tools
+are missing, it opens their installer, and you run the command again afterwards. `hooks all`
+connects the supported agents it finds on your Mac and saves a backup of each file it changes as
+`*.hookbell.bak`.
 
-What happens:
+macOS then asks for each agent whether it may send notifications. After you click Allow, a test
+notification appears. Restart running agent sessions so they load the hooks. On your first click
+on a notification, macOS asks once whether hookbell may control iTerm2 or Terminal, which hookbell
+needs to select the tab.
 
-- `install` builds hookbell and links it to `~/.local/bin/hookbell`. If the Xcode Command Line
-  Tools are missing, it opens their installer; run the command again afterwards.
-- `hooks all` sets up every supported AI tool it finds on your Mac (Codex, Claude Code, Gemini
-  CLI, Antigravity CLI). Your other hooks and settings stay untouched, and every changed file
-  keeps a backup as `*.hookbell.bak`. As soon as you allow notifications for a tool, a
-  confirmation notification shows up.
-- On the first click on a notification, macOS asks once per tool whether it may control iTerm2
-  or Terminal; allow it so the click can select the right tab.
-
-Developed and tested on macOS 27 with Apple silicon; other versions are untested.
-
-### Uninstall
+## Uninstall
 
 ```bash
 ~/.hookbell/hookbell uninstall && rm -rf ~/.hookbell
 ```
 
-This removes the hooks, all sources and the CLI link. macOS keeps the notification entries in
-System Settings > Notifications until you remove them there.
-
-## Where a click takes you
-
-| Running in | Click jumps to |
-|---|---|
-| iTerm2 | the exact session (window, tab and split pane) |
-| Terminal.app | the exact tab |
-| tmux inside iTerm2 or Terminal.app | the pane, then the terminal tab that shows it |
-| tmux inside another terminal | the pane, then the terminal app |
-| Ghostty and other terminals | the terminal app |
-| VS Code, Cursor, Antigravity terminals | the editor window of the project folder |
-
-Ghostty has no scripting interface yet, so hookbell can only bring the app to the front.
+macOS keeps the entries in System Settings > Notifications until you delete them there.
 
 ## Agents
 
-| Tool | Config | Notifies on |
+| Agent | Config file | Notifies when |
 |---|---|---|
-| `codex` | `~/.codex/config.toml` (`notify`) | turn complete; subagent turns stay silent |
-| `claude-code` | `~/.claude/settings.json` | Stop, Notification, `AskUserQuestion` |
-| `gemini` | `~/.gemini/settings.json` | AfterAgent, Notification, `ask_user` |
-| `agy` (Antigravity CLI) | `~/.gemini/config/hooks.json` | Stop (not while busy or cancelled), `ask_question`, `notify_user` |
+| `codex` | `~/.codex/config.toml` | a turn ends, except in subagents |
+| `claude-code` | `~/.claude/settings.json` | Claude stops, needs a permission or asks a question |
+| `gemini` | `~/.gemini/settings.json` | a turn ends, Gemini needs a permission or `ask_user` runs |
+| `agy` (Antigravity CLI) | `~/.gemini/config/hooks.json` | the agent stops with nothing left running, or asks a question |
 
-The title is `<project> · <status>`. The status comes from a `Status: X` line in the agent's
-final answer (or a JSON `status`/`verdict`), otherwise it is `Done`, `Question`, `Input needed`
-or `Error`. Codex runs only one `notify` command; if you already have one, `hookbell hooks codex`
-prints the line to use instead.
+The title reads `<project> · <status>`. hookbell takes the status from a `Status: X` line or a
+JSON `status` or `verdict` field in the agent's last answer and otherwise uses Done, Question,
+Input needed or Error. hookbell keeps one notification per session and replaces it with the next.
 
-`hookbell unhook <tool|all>` removes the hooks again.
+Codex accepts a single `notify` command. If you already use one, `hookbell hooks codex` prints the
+line to put there instead. `hookbell unhook <agent|all>` removes the hooks.
 
-## Notifications from anything else
+## Where a click goes
+
+| Running in | A click lands you in |
+|---|---|
+| iTerm2 | the session, including its window, tab and split pane |
+| Terminal.app | the tab |
+| tmux in iTerm2 or Terminal.app | the pane, then the terminal tab that shows it |
+| tmux in another terminal | the pane, then the terminal app |
+| VS Code, Cursor, Antigravity | the editor window of the project folder |
+| Ghostty and other terminals | the terminal app |
+
+Ghostty has no scripting interface, so hookbell brings the Ghostty app to the front.
+
+## Other tools
+
+Any script can send notifications through its own source:
 
 ```bash
-hookbell add backup "Backup" ~/Pictures/backup.png      # once per sender
+hookbell add backup "Backup" ~/Pictures/backup.png
 hookbell send backup --title "nas · DONE" --body "412 GB in 18 min"
-make test; hookbell send build --title "tests · exit $?" --sound Glass
 ```
 
-| Option | Meaning |
+| Option | Effect |
 |---|---|
 | `--title` (required), `--subtitle`, `--body` | Text |
-| `--sound NAME\|default\|none` | macOS system sound (`Hero`, `Glass`, …); unknown names fall back to `default` |
-| `--image PATH` | Picture on the right of the banner; the file is copied, not moved |
-| `--id KEY` | A notification with the same key replaces the previous one |
-| `--focus auto\|none\|TARGETS` | Click targets, default `auto` (detected from your terminal) |
-| `--dry-run` | Print `title \| body \| sound \| id \| targets` instead of sending |
+| `--sound NAME\|default\|none` | System sound such as `Hero` or `Glass`; unknown names play `default` |
+| `--image PATH` | Picture on the right of the banner |
+| `--id KEY` | Replaces the earlier notification with the same key |
+| `--focus auto\|none\|TARGETS` | Where a click goes; `auto` detects the terminal |
+| `--dry-run` | Prints `title \| body \| sound \| id \| targets` without sending |
 
-`TARGETS` is a `;`-separated list tried in order until one focuses a window:
-`iterm:<session-uuid>`, `tty:<device>`, `tmux:<pane>:<socket>:<tmux-binary>`, `url:<url>`,
+`TARGETS` is a `;`-separated list that hookbell tries in order: `iterm:<session-uuid>`,
+`tty:<device>`, `tmux:<pane>:<socket>:<tmux-binary>`, `url:<url>` or
 `app:<bundle-id>[:<folder>]`.
 
-Exit codes: `0` ok · `1` usage · `2` notifications not allowed · `3` delivery failed.
-In hook mode hookbell always exits `0`, because Claude Code and Gemini read exit code `2` as
-"block".
+`send` exits with `0` on success, `1` on a usage error, `2` when notifications are not allowed and
+`3` when delivery fails. `hook` exits with `0` even when sending fails, because Claude Code and
+Gemini treat `2` as a request to block the agent.
 
 ## Commands
 
 ```text
-hookbell install                         build, update all sources, link the CLI
-hookbell hooks <tool...|all>             add sources and register agent hooks
-hookbell unhook <tool...|all>            remove agent hooks
-hookbell add <source> <name> <icon>      create a source (PNG, JPG or ICNS; square 1024 px works best)
-hookbell authorize <source>              ask for notification permission again
-hookbell remove <source> | list          manage sources
-hookbell send <source> ... | hook ...    send a notification / handle a hook payload
-hookbell uninstall                       remove hooks, sources and the CLI link
-hookbell version
+hookbell install                       build, update all sources and link the CLI
+hookbell hooks <agent...|all>          add sources and register agent hooks
+hookbell unhook <agent...|all>         remove agent hooks
+hookbell add <source> <name> <icon>    create a source from a PNG, JPG or ICNS icon
+hookbell authorize <source>            ask for notification permission again
+hookbell remove <source>               delete a source
+hookbell list                          show all sources
+hookbell send <source> [options]       send a notification
+hookbell hook <source> [payload]       turn an agent hook payload into a notification
+hookbell uninstall                     remove hooks, sources and the CLI link
+hookbell version                       print the version
 ```
 
 ## How it works
 
-Notification Center always shows the icon of the app that posts a notification. hookbell
-therefore generates one tiny app bundle per source in
-`~/Library/Application Support/hookbell/Sources/`, each with its own bundle id
-(`local.hookbell.<source>`), name and icon, all running the same binary. When you click a
-notification, macOS starts that bundle again and it focuses the stored targets via AppleScript
-(iTerm2, Terminal.app), `tmux` or Launch Services.
+Notification Center shows the icon of the app that posts a notification, so hookbell builds a
+small app bundle per source in `~/Library/Application Support/hookbell/Sources/`. Each bundle has
+its own name and icon and runs the same binary. After your click, macOS starts that bundle again,
+and the bundle selects the stored target through AppleScript, `tmux` or Launch Services.
 
-The bundles are built and ad-hoc signed on your Mac, so no Apple Developer account,
-notarization or Gatekeeper exception is needed. After a change to `main.swift`, macOS asks once
-more per source whether it may control your terminal.
+hookbell builds and ad-hoc signs these bundles on your Mac, so it needs no Apple Developer account
+or notarization. If you change `main.swift`, macOS asks again whether each source may control your
+terminal.
 
 ## Development
 
 ```bash
-./test.sh                 # offline checks in a temporary HOME; also run by CI
-./test.sh --live codex    # additionally posts silent notifications through an authorized source
+./test.sh                # offline checks in a temporary HOME, also run in CI
+./test.sh --live codex   # also sends silent notifications through an allowed source
 ```
 
 ## License
