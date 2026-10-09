@@ -19,7 +19,7 @@ on a notification asks once whether that source may control iTerm2.
 ## Send
 
 ```bash
-agent-notify send codex --title "Shiftaro · ERLEDIGT" --body "3 Blöcke committet"
+agent-notify send codex --title "my-repo · DONE" --body "3 commits pushed"
 ```
 
 | Option | Meaning |

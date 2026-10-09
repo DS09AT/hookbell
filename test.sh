@@ -33,7 +33,7 @@ expect 1 n --title x --body
 
 # Delivery (needs notification permission for SOURCE)
 expect 0 n --title "agent-notify test" --body "plain"
-expect 0 n --title 'Quotes "double" \back\slash $HOME `tick`' --body $'Zeile 1\nZeile 2 · Umlaute äöüß · Emoji 🚀'
+expect 0 n --title 'Quotes "double" \back\slash $HOME `tick`' --body $'Line 1\nLine 2 · umlauts äöüß · emoji 🚀'
 expect 0 n --title "long" --body "$(printf 'x%.0s' {1..5000})"
 expect 0 n --title "unknown sound" --sound does-not-exist
 expect 0 n --title "missing image" --image /no/such.png
