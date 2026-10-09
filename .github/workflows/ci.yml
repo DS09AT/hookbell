@@ -2,20 +2,35 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    runs-on: macos-15
+  lint:
+    name: Lint
+    runs-on: ubicloud-standard-2-ubuntu-2404
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Lint
+      - name: shellcheck
         run: |
-          brew install shellcheck
+          command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
           shellcheck hookbell test.sh
-          swiftc -typecheck -warnings-as-errors main.swift
+
+  self-check:
+    name: Self-check (macOS)
+    # Ubicloud has Linux runners only; the Swift build and notification bundles need macOS.
+    runs-on: macos-15
+    needs: lint
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Swift warnings
+        run: swiftc -typecheck -warnings-as-errors main.swift
       - name: Self-check
         run: ./test.sh
