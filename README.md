@@ -35,18 +35,26 @@ Click targets: `iterm:<session-uuid>`, `url:<url>`, `app:<bundle-id>[:<folder>]`
 current folder (`TERM_PROGRAM=vscode`), or the calling app (`__CFBundleIdentifier`).
 
 Exit codes: `0` ok · `1` usage · `2` notifications not allowed · `3` delivery failed.
-Callers can fall back to `osascript` on `2`/`3`.
 
-## Hooked tools
+## Hooks
 
-| Source | Hook config | Adapter | Events |
+Tools call agent-notify directly; it reads their hook payload and builds the notification
+(`<repo> · <status>`, one per session via `--id`). No wrapper scripts.
+
+```bash
+agent-notify hook <source> [PAYLOAD]    # PAYLOAD as argument (Codex) or JSON on stdin (others)
+agent-notify hook <source> "" --dry-run # print title | body | sound | id instead of sending
+```
+
+| Source | Hook config | Command | Events |
 |---|---|---|---|
-| `codex` | `~/.codex/config.toml` (`notify`) | `~/.codex/notify.py` | turn complete (subagent turns filtered) |
-| `claude-code` | `~/.claude/settings.json` | `~/.claude/notify.sh` | Stop, permission/idle prompt, AskUserQuestion |
-| `agy` | `~/.gemini/config/hooks.json` | `~/.gemini/antigravity-cli/notify.py` | Stop (only when fully idle), `ask_question`/`notify_user` |
-| `gemini` | `~/.gemini/settings.json` | `~/.gemini/notify.sh` | AfterAgent, Notification, `ask_user` |
+| `codex` | `~/.codex/config.toml` (`notify`) | `agent-notify hook codex` | turn complete; subagent turns stay silent |
+| `claude-code` | `~/.claude/settings.json` | `"$HOME/.local/bin/agent-notify" hook claude-code` | Stop, Notification, PreToolUse `AskUserQuestion` |
+| `agy` | `~/.gemini/config/hooks.json` | `"$HOME/.local/bin/agent-notify" hook agy` | Stop (silent while busy or cancelled), PreToolUse `ask_question\|notify_user` |
+| `gemini` | `~/.gemini/settings.json` | `"$HOME/.local/bin/agent-notify" hook gemini` | AfterAgent, Notification, BeforeTool `ask_user` |
 
-Every adapter sends one notification per session (`--id`) and falls back to `osascript` or stays silent if agent-notify fails.
+A final answer's `Status: X` line (or a JSON `Status`/`verdict`) becomes the title status.
+Hook mode always exits `0`, because Claude Code and Gemini read exit code `2` as "block".
 
 ## Manage
 
