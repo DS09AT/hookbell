@@ -200,8 +200,10 @@ add)
     done
     iconutil -c icns "$tmp/i.iconset" -o "$tmp/x.app/Contents/Resources/AppIcon.icns"
   fi
-  # UNNotificationSound only finds sounds inside the bundle; APFS clones cost no space.
-  cp -c /System/Library/Sounds/*.aiff "$tmp/x.app/Contents/Resources/"
+  # UNNotificationSound only finds sounds inside the bundle. APFS clones cost no space but fail
+  # across volumes, so fall back to a plain copy.
+  cp -c /System/Library/Sounds/*.aiff "$tmp/x.app/Contents/Resources/" 2>/dev/null ||
+    cp /System/Library/Sounds/*.aiff "$tmp/x.app/Contents/Resources/"
   plist="$tmp/x.app/Contents/Info.plist"
   plutil -create xml1 "$plist"
   plutil -insert CFBundleExecutable -string hookbell "$plist"
