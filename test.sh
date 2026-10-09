@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2016,SC2329  # literal $ and backticks are test data; n is called via expect
+# shellcheck disable=SC2016,SC2317,SC2329  # literal $ and backticks are test data; n is called via expect
 # Self-check for hookbell.
 #   ./test.sh                 offline: CLI, hook payloads, click targets and hook config lifecycle,
 #                             all inside a temporary HOME; sends no notifications (CI-safe)

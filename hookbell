@@ -54,9 +54,12 @@ tool_info() {
 app_icon() {
   local app icon
   app="$(mdfind "kMDItemCFBundleIdentifier == '$1'" 2>/dev/null | head -1)"
-  icon="$([ -n "$app" ] && plutil -extract CFBundleIconFile raw "$app/Contents/Info.plist" 2>/dev/null || true)"
-  icon="$app/Contents/Resources/${icon%.icns}.icns"
-  [ -n "$app" ] && [ -f "$icon" ] && echo "$icon" || echo "$GENERIC_ICON"
+  if [ -n "$app" ]; then
+    icon="$(plutil -extract CFBundleIconFile raw "$app/Contents/Info.plist" 2>/dev/null || true)"
+    icon="$app/Contents/Resources/${icon%.icns}.icns"
+    if [ -f "$icon" ]; then echo "$icon"; return; fi
+  fi
+  echo "$GENERIC_ICON"
 }
 
 # Adds or removes hookbell's entries in a tool's hook config; other entries stay untouched.
