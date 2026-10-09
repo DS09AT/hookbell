@@ -1,12 +1,13 @@
 # hookbell
 
-Native macOS notifications for command-line tools and AI coding agents. Each sender appears in
-Notification Center with its own name and icon. Click a notification to return to the terminal tab
-or editor window that sent it.
+Native macOS notifications for command-line tools and AI coding agents.
 
-hookbell is one Swift file and one shell script. It works offline and builds with the Xcode
-Command Line Tools. It starts when a tool calls it or you click a notification and exits once it
-is done.
+- Each sender shows up in Notification Center with its own name and icon.
+- Click a notification to return to the iTerm2 session, Terminal.app tab, tmux pane or editor
+  window it came from.
+- You connect Codex, Claude Code, Gemini CLI and the Antigravity CLI with one command.
+- hookbell skips subagent turns and keeps one notification per session.
+- The whole tool is one Swift file plus a shell script and works offline.
 
 ## Install
 
