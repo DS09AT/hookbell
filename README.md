@@ -16,57 +16,33 @@ terminal tab, tmux pane or editor window the notification came from.
 
 ## Install
 
-You need macOS and the Xcode Command Line Tools (run `xcode-select --install` if `swiftc` is
-missing). Developed and tested on macOS 27 with Apple silicon; other versions are untested.
-
-### Yourself: two commands
+Run this in a terminal, or paste it into your AI agent (Claude Code, Codex, Gemini CLI,
+Antigravity) and ask it to run it:
 
 ```bash
-git clone https://github.com/DS09AT/hookbell.git ~/.hookbell && ~/.hookbell/hookbell install
-hookbell hooks all
+git clone https://github.com/DS09AT/hookbell.git ~/.hookbell && ~/.hookbell/hookbell install && ~/.hookbell/hookbell hooks all
 ```
 
-`hooks all` sets up every supported AI tool it finds on your Mac (Codex, Claude Code, Gemini CLI,
-Antigravity CLI). For each one, macOS asks once whether it may show notifications: click
-**Allow**. Then restart running agent sessions so they pick up the new hooks.
+Then click **Allow** in the macOS prompt for each tool and restart running agent sessions. The
+command prints exactly that when it is done.
 
-That's it. Your other hooks and settings stay untouched, and every changed file keeps a backup
-as `*.hookbell.bak`. On the first click on a notification, macOS asks once per tool whether it
-may control iTerm2 or Terminal; allow it so the click can select the right tab.
+What happens:
 
-If your shell can't find `hookbell`, add `~/.local/bin` to your `PATH` or call
-`~/.local/bin/hookbell` directly.
+- `install` builds hookbell and links it to `~/.local/bin/hookbell`. If the Xcode Command Line
+  Tools are missing, it opens their installer; run the command again afterwards.
+- `hooks all` sets up every supported AI tool it finds on your Mac (Codex, Claude Code, Gemini
+  CLI, Antigravity CLI). Your other hooks and settings stay untouched, and every changed file
+  keeps a backup as `*.hookbell.bak`. As soon as you allow notifications for a tool, a
+  confirmation notification shows up.
+- On the first click on a notification, macOS asks once per tool whether it may control iTerm2
+  or Terminal; allow it so the click can select the right tab.
 
-### With your AI agent: one prompt
-
-Paste this into Claude Code, Codex, Gemini CLI or Antigravity and answer the prompts macOS shows
-you:
-
-```text
-Install hookbell (https://github.com/DS09AT/hookbell) on my Mac and connect it to my AI coding
-tools. Follow these steps exactly and summarize what you did at the end.
-
-1. Check that this is macOS and that `swiftc` exists. If it is missing, run
-   `xcode-select --install`, ask me to finish the installer dialog and wait for me.
-2. Run `git clone https://github.com/DS09AT/hookbell.git ~/.hookbell`, or
-   `git -C ~/.hookbell pull` if the folder already exists. Then run `~/.hookbell/hookbell install`.
-3. Run `~/.hookbell/hookbell hooks all`. It only sets up tools that are installed, keeps my other
-   settings and writes `*.hookbell.bak` backups. If it reports an existing Codex `notify`
-   command, show it to me and ask before changing anything.
-4. For every source listed by `~/.hookbell/hookbell list`, tell me to click "Allow" in the macOS
-   notification prompt, then run `~/.hookbell/hookbell authorize <source>`. Each call waits up
-   to 5 minutes for my answer, so allow it to run that long.
-5. Run `~/.hookbell/hookbell send <source> --title "hookbell works" --body "Click me"` for one
-   source and ask me to click the notification. On the first click macOS asks whether it may
-   control my terminal; I allow that once per source.
-6. If `~/.local/bin` is not on my PATH, tell me how to add it. Remind me to restart running
-   agent sessions so they load the new hooks.
-```
+Developed and tested on macOS 27 with Apple silicon; other versions are untested.
 
 ### Uninstall
 
 ```bash
-hookbell uninstall && rm -rf ~/.hookbell
+~/.hookbell/hookbell uninstall && rm -rf ~/.hookbell
 ```
 
 This removes the hooks, all sources and the CLI link. macOS keeps the notification entries in
