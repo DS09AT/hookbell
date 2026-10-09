@@ -1,6 +1,7 @@
 #!/bin/bash
 # agent-notify: native macOS notifications per source (own name + icon) with click-to-focus.
 #   agent-notify send <source> --title T [--body B] [...]   options: see main.swift
+#   agent-notify hook <source> [PAYLOAD]                     payload from argv (Codex) or stdin
 #   agent-notify add <source> <display-name> <icon.png|.icns>
 #   agent-notify authorize <source> | remove <source> | list | install
 set -euo pipefail
@@ -23,6 +24,12 @@ send)
   [ -x "$bin" ] || die "unknown source '$2'; add it with: agent-notify add $2 <name> <icon>"
   shift 2
   exec "$bin" "$@"
+  ;;
+hook)
+  check_id "${2:-}"
+  bin="$(bundle "$2")/Contents/MacOS/agent-notify"
+  [ -x "$bin" ] || die "unknown source '$2'"
+  exec "$bin" --hook "${3:-}" "${@:4}"
   ;;
 install)
   mkdir -p "$ROOT/Sources" "$HOME/.local/bin"

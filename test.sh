@@ -52,5 +52,33 @@ expect 0 ./agent-notify send "$SOURCE" --jump app:does.not.exist
 expect 0 ./agent-notify send "$SOURCE" --jump bogus
 
 [ ! -e /tmp/pwned ] || { echo "FAIL AppleScript injection"; fail=1; }
+
+# Hook payload mapping: title | body | sound | id, or "silent"
+hook() {
+  local want="$1" payload="$2" got
+  if [ "${3:-}" = argv ]; then
+    got="$(./agent-notify hook "$SOURCE" "$payload" --dry-run 2>&1 </dev/null)"
+  else
+    got="$(printf '%s' "$payload" | ./agent-notify hook "$SOURCE" "" --dry-run 2>&1)"
+  fi
+  if [ "$got" = "$want" ]; then echo "ok   hook → ${want//$'\n'/⏎}"; else echo "FAIL hook: got '${got//$'\n'/⏎}', want '${want//$'\n'/⏎}'"; fail=1; fi
+}
+S="$SOURCE"
+hook $'repo · ERLEDIGT | - a\n- b | Hero | '"$S-t1" '{"type":"agent-turn-complete","thread-id":"t1","cwd":"/x/repo","last-assistant-message":"Status: ERLEDIGT\n\n- a\n- b"}' argv
+hook "repo · CLEAN | No findings. | Hero | $S-t2" '{"type":"agent-turn-complete","thread-id":"t2","cwd":"/x/repo","last-assistant-message":"{\"verdict\":\"CLEAN\",\"summary\":\"No findings.\"}"}' argv
+sub="$(sqlite3 "$HOME/.codex/state_5.sqlite" "select id from threads where thread_source='subagent' limit 1" 2>/dev/null)"
+[ -z "$sub" ] || hook "silent" '{"type":"agent-turn-complete","thread-id":"'"$sub"'","cwd":"/x/repo","last-assistant-message":"{}"}' argv
+hook "proj · TEILWEISE | Open item | Hero | $S-s1" '{"hook_event_name":"Stop","session_id":"s1","cwd":"/x/proj","last_assistant_message":"```text\nStatus: TEILWEISE\n```\nOpen item"}'
+hook "proj · Input needed | Claude needs your permission to use Bash | Glass | $S-s1" '{"hook_event_name":"Notification","session_id":"s1","cwd":"/x/proj","message":"Claude needs your permission to use Bash"}'
+hook "proj · Question | Waiting for your answer | Glass | $S-s1" '{"hook_event_name":"PreToolUse","session_id":"s1","cwd":"/x/proj","tool_name":"AskUserQuestion"}'
+hook "proj · Done | All done. | Hero | $S-g1" '{"hook_event_name":"AfterAgent","session_id":"g1","cwd":"/x/proj","prompt_response":"All done."}'
+hook "ws · Done | Done. | Hero | $S-c1" '{"conversationId":"c1","fullyIdle":true,"terminationReason":"NO_TOOL_CALL","error":"","workspacePaths":["/x/ws"]}'
+hook "silent" '{"conversationId":"c2","fullyIdle":false,"terminationReason":"NO_TOOL_CALL"}'
+hook "silent" '{"conversationId":"c3","fullyIdle":true,"terminationReason":"USER_CANCELED"}'
+hook "ws · Error | quota exceeded | Basso | $S-c4" '{"conversationId":"c4","fullyIdle":true,"error":"quota exceeded","workspacePaths":["/x/ws"]}'
+hook "$S · Question | Waiting for your answer | Glass | $S-c5" '{"conversationId":"c5","toolCall":{"name":"ask_question","args":{}}}'
+hook "silent" 'not json'
+hook "silent" ''
+expect 0 ./agent-notify hook "$SOURCE" '{"type":"agent-turn-complete","thread-id":"test","cwd":"/x/repo","last-assistant-message":"Status: OK"}'
 [ "$fail" -eq 0 ] && echo "ALL GREEN" || echo "FAILURES"
 exit "$fail"

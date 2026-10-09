@@ -1,27 +1,33 @@
 // agent-notify: runs inside a generated source bundle (one per sender, own icon).
 //   send:  agent-notify --title T [--subtitle S] [--body B] [--sound NAME|default|none]
 //                       [--image PATH] [--id KEY] [--focus auto|none|TARGET]
+//   hook:  agent-notify --hook PAYLOAD  (empty PAYLOAD: read it from stdin)
+//          Codex notify, Claude Code, Gemini CLI and agy hook payloads become a notification.
 //   other: --authorize (asks for permission, waits for the answer) | --jump TARGET
+//          --dry-run (print title | body | sound | id instead of sending)
 //   none:  launched by macOS after a click on one of our notifications.
 // TARGET: iterm:<session-uuid> | url:<url> | app:<bundle-id>[:<folder>]
-// Exit codes: 0 ok, 1 usage, 2 not authorized, 3 delivery failed.
+// Exit codes: 0 ok, 1 usage, 2 not authorized, 3 delivery failed; always 0 in hook mode.
 
 import AppKit
+import SQLite3
 import UserNotifications
 
 let center = UNUserNotificationCenter.current()
+// Claude Code and Gemini treat a hook's exit code 2 as "block", so hooks must never fail.
+var hookMode = false
 
 func finish(_ code: Int32, _ message: String? = nil) -> Never {
     if let message { FileHandle.standardError.write(Data("agent-notify: \(message)\n".utf8)) }
-    exit(code)
+    exit(hookMode ? 0 : code)
 }
 
 func parse(_ args: [String]) -> [String: String] {
-    let valued: Set = ["--title", "--subtitle", "--body", "--sound", "--image", "--id", "--focus", "--jump"]
+    let valued: Set = ["--title", "--subtitle", "--body", "--sound", "--image", "--id", "--focus", "--jump", "--hook"]
     var opts: [String: String] = [:]
     var it = args.makeIterator()
     while let key = it.next() {
-        if key == "--authorize" { opts[key] = "1"; continue }
+        if key == "--authorize" || key == "--dry-run" { opts[key] = "1"; continue }
         guard valued.contains(key) else { finish(1, "unknown option \(key)") }
         guard let value = it.next() else { finish(1, "\(key) needs a value") }
         opts[key] = value
@@ -123,6 +129,74 @@ func content(_ opts: [String: String]) -> UNNotificationContent {
     return c
 }
 
+// Codex runs notify for subagent turns too; only its own state DB tells them apart.
+// ponytail: hardcoded state_5 schema name, the filter silently stops when Codex bumps it.
+func isCodexSubagent(_ threadID: String) -> Bool {
+    var db: OpaquePointer?
+    defer { sqlite3_close(db) }
+    guard !threadID.isEmpty,
+          sqlite3_open_v2(NSHomeDirectory() + "/.codex/state_5.sqlite", &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return false }
+    sqlite3_busy_timeout(db, 1000)
+    var stmt: OpaquePointer?
+    defer { sqlite3_finalize(stmt) }
+    guard sqlite3_prepare_v2(db, "select thread_source from threads where id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+    sqlite3_bind_text(stmt, 1, threadID, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    guard sqlite3_step(stmt) == SQLITE_ROW, let source = sqlite3_column_text(stmt, 0) else { return false }
+    return String(cString: source) == "subagent"
+}
+
+// Final agent answer -> (status, body): a "Status: X" line or a JSON verdict, plus the remaining text.
+func summarize(_ text: String) -> (String, String) {
+    if let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] {
+        let pick = { (keys: [String]) in keys.lazy.compactMap { json[$0] as? String }.first { !$0.isEmpty } ?? "" }
+        return (pick(["Status", "status", "verdict", "result"]), pick(["summary_de", "summary", "message"]))
+    }
+    var status = ""
+    var lines: [String] = []
+    for line in text.split(separator: "\n") {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        if status.isEmpty, let r = t.range(of: #"^\**Status\**\s*:\s*"#, options: [.regularExpression, .caseInsensitive]) {
+            status = t[r.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: "*` "))
+        } else if !t.isEmpty, !t.hasPrefix("```") {
+            lines.append(t)
+        }
+    }
+    return (status, lines.joined(separator: "\n"))
+}
+
+// Maps a hook payload to send options; nil means the event is deliberately silent.
+func hookOptions(_ raw: String) -> [String: String]? {
+    guard let p = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { return nil }
+    let str = { (key: String) in p[key] as? String ?? "" }
+    let source = Bundle.main.bundleIdentifier?.components(separatedBy: ".").last ?? "agent"
+    let event = [str("hook_event_name"), str("type"), p["toolCall"] != nil ? "PreToolUse" : ""].first { !$0.isEmpty } ?? ""
+
+    if event == "agent-turn-complete", isCodexSubagent(str("thread-id")) { return nil }
+    if p["fullyIdle"] as? Bool == false || str("terminationReason") == "USER_CANCELED" { return nil }  // agy: background work still running or the user cancelled
+
+    let dir = [str("cwd"), (p["workspacePaths"] as? [String])?.first ?? ""].first { !$0.isEmpty } ?? ""
+    let repo = dir.isEmpty ? source : URL(fileURLWithPath: dir).lastPathComponent
+    let session = [str("thread-id"), str("session_id"), str("conversationId")].first { !$0.isEmpty } ?? "unknown"
+
+    var (status, body, sound) = ("Done", "", "Hero")
+    switch event {
+    case "PreToolUse", "BeforeTool":
+        (status, body, sound) = ("Question", "Waiting for your answer", "Glass")
+    case "Notification":
+        (status, body, sound) = ("Input needed", str("message"), "Glass")
+    default:
+        if !str("error").isEmpty {
+            (status, body, sound) = ("Error", str("error"), "Basso")
+        } else {
+            let answer = [str("last-assistant-message"), str("last_assistant_message"), str("prompt_response")].first { !$0.isEmpty } ?? ""
+            let (found, rest) = summarize(answer)
+            (status, body) = (found.isEmpty ? "Done" : found, rest)
+        }
+    }
+    return ["--title": "\(repo) · \(status)", "--body": String((body.isEmpty ? "\(status)." : body).prefix(300)),
+            "--sound": sound, "--id": "\(source)-\(session)"]
+}
+
 final class ClickHandler: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
@@ -140,7 +214,20 @@ if args.isEmpty {
     NSApplication.shared.run()
 }
 
-let opts = parse(args)
+var opts = parse(args)
+if let payload = opts["--hook"] {
+    hookMode = true
+    let raw = payload.isEmpty && isatty(0) == 0 ? String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self) : payload
+    guard let hook = hookOptions(raw) else {
+        if opts["--dry-run"] != nil { print("silent") }
+        exit(0)
+    }
+    opts.merge(hook) { _, new in new }
+}
+if opts["--dry-run"] != nil {
+    print(["--title", "--body", "--sound", "--id"].map { opts[$0] ?? "" }.joined(separator: " | "))
+    exit(0)
+}
 if let target = opts["--jump"] {
     jump(target) { exit(0) }
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 10))
